@@ -1,105 +1,76 @@
-﻿import random
-from time import sleep
+﻿# -*- coding: utf-8 -*-
+"""
+股票市场模拟.py
+重构主函数，支持多策略股民。
+"""
+import random
+from 市场撮合引擎 import 市场撮合引擎
+from 股民 import 趋势型股民, 逆势型股民, 随机型股民
+from 发行人 import 发行人, 股票名称列表, 发行新股数量
 
-class 股民:  
-    def __init__(self, name, free_money, confidence):
-        self.name = name
-        self.free_money = free_money
-        self.confidence = confidence
-        self.资产 = {}  # 资产：{股票名: 持有数量}
+# ---------------- 普通股民初始化 ----------------
+股民列表 = []
+for i in range(50):
+    if i % 3 == 0:
+        股民对象 = 趋势型股民(f"趋势型股民{i+1}", random.randint(10000, 50000), random.randint(20, 50))
+    elif i % 3 == 1:
+        股民对象 = 逆势型股民(f"逆势型股民{i+1}", random.randint(10000, 50000), random.randint(90, 100))
+    else:
+        股民对象 = 随机型股民(f"随机型股民{i+1}", random.randint(10000, 50000), random.randint(0, 100))
+    for 名称 in 股票名称列表:
+        股民对象.个股信心表[名称] = random.randint(30, 80)
+    股民列表.append(股民对象)
 
-    def buying(self, stock, buy_amount, 买入信号):
-        if not 买入信号:
-            print(f"{self.name}买入信号未触发，未买入：{stock.name}")
-            return False
-        if buy_amount * stock.price <= self.free_money and buy_amount > 0:
-            self.free_money -= buy_amount * stock.price
-            self.资产[stock.name] = self.资产.get(stock.name, 0) + buy_amount
-            print(f"{self.name}买入股票：{stock.name} 买入数量：{buy_amount} 买入金额：{buy_amount * stock.price}")
-            return True
-        else:
-            print(f"{self.name}买入股票金额超过可用资金或买入数量为0，买入失败：{stock.name}")
-            return False
+发行人对象 = 发行人()
+全部股民列表 = [发行人对象] + 股民列表
 
-    def consider(self, stock, price_dict):
-        买入信号 = False
-        buy_amount = 0
-        持仓市值 = 0
-        for name, num in self.资产.items():
-            持仓市值 += num * price_dict.get(name, 0)
-        all_money = self.free_money + 持仓市值
-        if all_money == 0:
-            all_money = self.free_money
-        if 100 * self.free_money / all_money > 100 - self.confidence:
-            买入信号 = True
-            buy_amount = int(random.randint(int(self.confidence), 100) * 0.01 * self.free_money / stock.price)
-            print(f"{self.name}考虑买入股票：{stock.name} 买入数量：{buy_amount}")
-        return 买入信号, buy_amount, stock.name
+# ---------------- 撮合引擎 ----------------
+引擎 = 市场撮合引擎()
 
-    def selling(self, stock, sell_amount, 卖出信号):
-        if not 卖出信号:
-            print(f"{self.name}卖出信号未触发，未卖出：{stock.name}")
-            return False
-        持有数量 = self.资产.get(stock.name, 0)
-        if sell_amount > 0 and 持有数量 >= sell_amount:
-            self.free_money += sell_amount * stock.price
-            self.资产[stock.name] -= sell_amount
-            print(f"{self.name}卖出股票：{stock.name} 卖出数量：{sell_amount} 卖出金额：{sell_amount * stock.price}")
-            if self.资产[stock.name] == 0:
-                del self.资产[stock.name]
-            return True
-        else:
-            print(f"{self.name}卖出失败，持有数量不足或卖出数量为0：{stock.name}")
-            return False
+# ---------------- 消息广播函数 ----------------
+def 广播消息(股民列表, 股票名称, 变化量):
+    for 股民对象 in 股民列表:
+        旧值 = 股民对象.个股信心表.get(股票名称, 50)
+        新值 = max(0, min(100, 旧值 + 变化量))
+        股民对象.个股信心表[股票名称] = 新值
 
-    def show_assets(self):
-        print(f"{self.name}当前自由资金：{self.free_money}")
-        print(f"{self.name}当前持仓：{self.资产}")
+# ---------------- 主循环 ----------------
+初始价格字典 = {"地产股": 10, "科技股": 11, "医药股": 9}
+日志列表 = []
+for 当前时钟 in range(100):
+    if 当前时钟 == 30:
+        广播消息(全部股民列表, "地产股", +25)
+        日志列表.append(f"[时钟{当前时钟}] 广播：地产股信心+25")
+    if 当前时钟 == 60:
+        广播消息(全部股民列表, "科技股", -30)
+        日志列表.append(f"[时钟{当前时钟}] 广播：科技股信心-30")
+    if 当前时钟 == 0:
+        当前价格字典 = 初始价格字典.copy()
+    else:
+        当前价格字典 = {
+            名称: round((初始价格字典[名称] * random.uniform(0.9, 1.1)), 2)
+            if 引擎.最新成交价(名称) is None else 引擎.最新成交价(名称)
+            for 名称 in 股票名称列表
+        }
+    for 股民对象 in 全部股民列表:
+        选中股票名称 = random.choice(股票名称列表)
+        新委托单 = 股民对象.生成委托单(选中股票名称, 当前价格字典, 引擎)
+        if 新委托单:
+            引擎.提交委托单(新委托单)
+            持仓 = 股民对象.持仓数量表.get(选中股票名称, 0)
+            日志列表.append(
+                f"[时钟{当前时钟}] {股民对象.姓名} {'买入' if 新委托单.买卖方向=='买' else '卖出'} {选中股票名称} 价:{新委托单.委托价格} 量:{新委托单.委托数量} 现金:{股民对象.现金余额:.2f} 持仓:{持仓}"
+            )
+    if 当前时钟 % 50 == 0:
+        for 名称 in 股票名称列表:
+            最新价 = 引擎.最新成交价(名称)
+            日志列表.append(f"[时钟{当前时钟}] {名称} 最新成交价: {最新价}")
+        for 股民对象 in 股民列表:
+            日志列表.append(f"[时钟{当前时钟}] {股民对象.姓名} 现金: {股民对象.现金余额:.2f} 持仓: {股民对象.持仓数量表}")
 
-# 创建股民列表，分配编号
-股民列表 = [股民(f"股民{i+1}", free_money=random.randint(10000, 50000), confidence=random.randint(50, 100)) for i in range(10)]
+with open("市场动态日志.txt", "w", encoding="utf-8") as f:
+    for line in 日志列表:
+        f.write(line + "\n")
 
-# 其余代码保持不变
-
-
-class 股票:  
-    def __init__(self, name, price, amount):  
-        self.name = name  
-        self.price = price  
-        self.amount = amount
-
-# 假设有多只股票
-股票列表 = [
-    股票("地产股", random.randint(50, 150), random.randint(100, 1000)),
-    股票("科技股", random.randint(80, 200), random.randint(50, 500)),
-    股票("医药股", random.randint(60, 180), random.randint(80, 800))
-]
-ticks=0
-while ticks<1000:
-    # 随机更新每只股票的价格和数量
-    price_dict = {}
-    for stock in 股票列表:
-        stock.price = random.randint(50, 200)
-        stock.amount = random.randint(50, 1000)
-        price_dict[stock.name] = stock.price
-
-    # 每个股民都进行买入/卖出决策
-    for 当前股民 in 股民列表:
-        当前股票 = random.choice(股票列表)
-        买入信号, buy_amount, stock_name = 当前股民.consider(当前股票, price_dict)
-        卖出信号 = random.choice([True, False])  # 示例：随机生成卖出信号
-
-        if 买入信号:
-            当前股民.buying(当前股票, buy_amount, 买入信号)
-        else:
-            print("买入信号未触发，未买入股票")
-
-        持有数量 = 当前股民.资产.get(当前股票.name, 0)
-        if 持有数量 > 0:
-            当前股民.selling(当前股票, 持有数量 // 2, 卖出信号)
-        else:
-            print("没有持仓，无需卖出")
-        当前股民.show_assets()
-    ticks=ticks+1
-    for 当前股民 in 股民列表:
-        当前股民.show_assets()
+from 股票市场总结 import 市场总结分析
+市场总结分析(引擎, 股票名称列表)
